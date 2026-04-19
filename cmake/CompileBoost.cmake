@@ -59,9 +59,22 @@ function(compile_boost)
   include(ExternalProject)
 
   set(BOOST_INSTALL_DIR "${CMAKE_BINARY_DIR}/boost_install")
+
+  # illumos: posix_fallocate(3C) on shm_open(3C) fds returns EINVAL, which
+  # upstream boost::interprocess does not tolerate.  See patch header for
+  # details.  Applied only on SunOS to keep other platforms bit-identical.
+  set(BOOST_PATCH_COMMAND "")
+  if(CMAKE_SYSTEM_NAME STREQUAL "SunOS")
+    set(BOOST_PATCH_COMMAND
+        patch -p1 --forward -r -
+              -i ${CMAKE_SOURCE_DIR}/cmake/boost-illumos-fallocate-fallback.patch
+        || true)
+  endif()
+
   ExternalProject_add("${COMPILE_BOOST_TARGET}Project"
     URL                "https://archives.boost.io/release/1.78.0/source/boost_1_78_0.tar.bz2"
     URL_HASH           SHA256=8681f175d4bdb26c52222665793eef08490d7758529330f98d3b29dd0735bccc
+    PATCH_COMMAND      ${BOOST_PATCH_COMMAND}
     CONFIGURE_COMMAND  ${BOOTSTRAP_COMMAND}
                        ${BOOTSTRAP_ARGS}
                        --with-libraries=${BOOTSTRAP_LIBRARIES}
