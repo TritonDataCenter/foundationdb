@@ -21,6 +21,7 @@
 #include "boost/lexical_cast.hpp"
 #include "boost/algorithm/string.hpp"
 
+#include <cstdio>
 #include <string>
 #include <time.h>
 #include <msgpack.hpp>
@@ -2281,6 +2282,30 @@ void parse(StringRef& val, time_t& t) {
 		throw std::runtime_error("failed to convert ISO 8601 datetime");
 	}
 	timezone = -timezone;
+#elif defined(__sun) && defined(__SVR4)
+	// illumos strptime(3C) does not honour %z and struct tm has no tm_gmtoff.
+	// Parse the canonical part, then manually capture the offset suffix.
+	char* rest = ::strptime(val.toString().c_str(), "%FT%T", &tm);
+	if (rest == nullptr) {
+		throw std::invalid_argument("failed to parse ISO 8601 datetime");
+	}
+	long offsetSeconds = 0;
+	if (*rest != '\0' && *rest != 'Z') {
+		int sign = (*rest == '-') ? -1 : 1;
+		if (*rest != '+' && *rest != '-') {
+			throw std::invalid_argument("failed to parse ISO 8601 datetime");
+		}
+		int h = 0, m = 0;
+		if (std::sscanf(rest + 1, "%2d%*[:]%2d", &h, &m) < 1) { // NOLINT
+			throw std::invalid_argument("failed to parse ISO 8601 datetime");
+		}
+		offsetSeconds = sign * (h * 3600 + m * 60);
+	}
+	t = timegm(&tm);
+	if (t == -1) {
+		throw std::runtime_error("failed to convert ISO 8601 datetime");
+	}
+	t -= offsetSeconds;
 #else
 	if (strptime(val.toString().c_str(), "%FT%T%z", &tm) == nullptr) {
 		throw std::invalid_argument("failed to parse ISO 8601 datetime");

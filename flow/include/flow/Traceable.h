@@ -87,6 +87,11 @@ struct Traceable : std::false_type {};
 	}
 
 FORMAT_TRACEABLE(bool, "%d");
+// Plain `char` is a separate type from both signed and unsigned char in C++.
+// On illumos <stdint.h> typedefs int8_t as plain char; without this
+// specialization, SFINAE gates like std::enable_if<Traceable<T>::value> would
+// reject int8_t/char values.
+FORMAT_TRACEABLE(char, "%d");
 FORMAT_TRACEABLE(signed char, "%d");
 FORMAT_TRACEABLE(unsigned char, "%d");
 FORMAT_TRACEABLE(short, "%d");

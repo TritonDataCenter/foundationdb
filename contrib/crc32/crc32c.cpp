@@ -25,7 +25,8 @@
 #define _CRT_SECURE_NO_WARNINGS
 #endif
 
-#if (defined(__linux__) || defined(__APPLE__) || defined(__FreeBSD__))
+#if (defined(__linux__) || defined(__APPLE__) || defined(__FreeBSD__) || \
+     (defined(__sun) && defined(__SVR4)))
 #define __unixish__ 1
 #endif
 

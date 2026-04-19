@@ -288,7 +288,7 @@ public:
 			throw platform_error();
 		}
 		permission.set_permissions(&sa);
-#elif (defined(__linux__) || defined(__APPLE__) || defined(__FreeBSD__))
+#elif (defined(__linux__) || defined(__APPLE__) || defined(__FreeBSD__) || (defined(__sun) && defined(__SVR4)))
 		// There is nothing to do here, since the default permissions are fine
 #else
 #error Port me!
@@ -298,7 +298,7 @@ public:
 	virtual ~WorldReadablePermissions() {
 #ifdef _WIN32
 		LocalFree(sa.lpSecurityDescriptor);
-#elif (defined(__linux__) || defined(__APPLE__) || defined(__FreeBSD__))
+#elif (defined(__linux__) || defined(__APPLE__) || defined(__FreeBSD__) || (defined(__sun) && defined(__SVR4)))
 		// There is nothing to do here, since the default permissions are fine
 #else
 #error Port me!
@@ -322,6 +322,16 @@ UID getSharedMemoryMachineId() {
 	// Don't use shared memory if DEBUG_DETERMINISM is set
 	return newUID;
 #else
+	// Opt-out via env var.  Set FDB_SKIP_SHARED_MEMORY_MACHINE_ID=1 when running
+	// on platforms where boost::interprocess::managed_shared_memory does not
+	// behave well (observed on illumos with boost 1.86: the creator path leaves
+	// /tmp/.SHMD* at size 0 and subsequent opens spin indefinitely).  Single-
+	// process deployments don't need the coordinated machine id; other
+	// deployments should use an explicit --machine-id argument instead.
+	if (char const* v = ::getenv("FDB_SKIP_SHARED_MEMORY_MACHINE_ID");
+	    v != nullptr && v[0] != '\0' && v[0] != '0') {
+		return newUID;
+	}
 	UID* machineId = nullptr;
 	int numTries = 0;
 

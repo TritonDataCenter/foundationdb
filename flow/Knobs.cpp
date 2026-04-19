@@ -264,7 +264,7 @@ void FlowKnobs::initialize(Randomize randomize, IsSimulated isSimulated) {
 	init( MAX_METRICS,                                         600 );
 	init( MAX_METRIC_SIZE,                                    2500, Atomic::NO );
 	init( MAX_METRIC_LEVEL,                                     25 );
-	init( METRIC_LEVEL_DIVISOR,                             log(4) );
+	init( METRIC_LEVEL_DIVISOR,                             log(4.0) );
 	init( METRIC_LIMIT_START_QUEUE_SIZE,                        10 );  // The queue size at which to start restricting logging by disabling levels
 	init( METRIC_LIMIT_RESPONSE_FACTOR,                         10 );  // The additional queue size at which to disable logging of another level (higher == less restrictive)
 

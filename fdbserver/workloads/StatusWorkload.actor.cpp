@@ -112,7 +112,7 @@ struct StatusWorkload : TestWorkload {
 		std::vector<double> bands;
 
 		while (bands.size() < numBands) {
-			bands.push_back(deterministicRandom()->random01() * pow(10, deterministicRandom()->randomInt(-5, 1)));
+			bands.push_back(deterministicRandom()->random01() * pow(10.0, deterministicRandom()->randomInt(-5, 1)));
 		}
 
 		std::string result = "\"bands\":[";

@@ -36,10 +36,20 @@ endif()
 set(jemalloc_default ON)
 # We don't want to use jemalloc on Windows
 # Nor on FreeBSD, where jemalloc is the default system allocator
-if(USE_SANITIZER OR WIN32 OR (CMAKE_SYSTEM_NAME STREQUAL "FreeBSD") OR APPLE)
+# Nor on illumos, where libumem is preferred
+if(USE_SANITIZER OR WIN32 OR (CMAKE_SYSTEM_NAME STREQUAL "FreeBSD") OR
+    (CMAKE_SYSTEM_NAME STREQUAL "SunOS") OR APPLE)
   set(jemalloc_default OFF)
 endif()
 env_set(USE_JEMALLOC ${jemalloc_default} BOOL "Link with jemalloc")
+
+# Force-include illumos prelude so libc symbols that collide with FDB
+# globals (yield, etc.) are renamed out of the way before any system
+# header declares them.
+if(CMAKE_SYSTEM_NAME STREQUAL "SunOS")
+  add_compile_options(
+    "$<${is_cxx_compile}:-include${CMAKE_SOURCE_DIR}/flow/include/flow/IllumosPrelude.h>")
+endif()
 env_set(USE_CUSTOM_JEMALLOC OFF BOOL "Manually download and build jemalloc")
 
 if(USE_LIBCXX AND STATIC_LINK_LIBCXX AND NOT USE_LD STREQUAL "LLD")
@@ -187,8 +197,8 @@ else()
     add_compile_options(-ggdb1)
   endif()
 
-  if(NOT FDB_RELEASE)
-    # Enable compression of the debug sections. This reduces the size of the binaries several times. 
+  if(NOT FDB_RELEASE AND NOT (CMAKE_SYSTEM_NAME STREQUAL "SunOS"))
+    # Enable compression of the debug sections. This reduces the size of the binaries several times.
     # We do not enable it release builds, because CPack fails to generate debuginfo packages when
     # compression is enabled
     add_compile_options(-gz)
@@ -432,6 +442,12 @@ else()
   check_symbol_exists(DTRACE_PROBE sys/sdt.h SUPPORT_DTRACE)
   check_symbol_exists(aligned_alloc stdlib.h HAS_ALIGNED_ALLOC)
   message(STATUS "Has aligned_alloc: ${HAS_ALIGNED_ALLOC}")
+  # illumos ships real DTrace which requires generating USDT stubs via
+  # `dtrace -G`; FDB's build currently uses the Linux/SystemTap inline-asm
+  # approach so we disable the probes on SunOS for the initial port.
+  if(CMAKE_SYSTEM_NAME STREQUAL "SunOS")
+    set(SUPPORT_DTRACE 0)
+  endif()
   if((SUPPORT_DTRACE) AND (USE_DTRACE))
     set(DTRACE_PROBES 1)
   endif()

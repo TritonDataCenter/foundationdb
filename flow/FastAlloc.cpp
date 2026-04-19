@@ -47,6 +47,10 @@
 #include <sys/mman.h>
 #endif
 
+#if defined(__sun) && defined(__SVR4)
+#include <sys/mman.h>
+#endif
+
 #define FAST_ALLOCATOR_DEBUG 0
 
 #ifdef _MSC_VER
@@ -61,6 +65,8 @@
 #ifdef __linux__
 #define INIT_SEG __attribute__((init_priority(1000)))
 #elif defined(__FreeBSD__)
+#define INIT_SEG __attribute__((init_priority(1000)))
+#elif defined(__sun) && defined(__SVR4)
 #define INIT_SEG __attribute__((init_priority(1000)))
 #elif defined(__APPLE__)
 #pragma message "init_priority is not supported on this platform; will this be a problem?"

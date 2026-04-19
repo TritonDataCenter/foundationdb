@@ -96,6 +96,11 @@ int64_t BackupAgentBase::parseTime(std::string timestamp) {
 	}
 	// Negate offset to match the orientation of tzOffset
 	localTZOffset = -localTZOffset;
+#elif defined(__sun) && defined(__SVR4)
+	// illumos: struct tm has no tm_gmtoff. Use the global `timezone` (seconds
+	// WEST of GMT, inverted to match FDB's EAST convention) adjusted for DST.
+	tzset();
+	localTZOffset = -::timezone + (out.tm_isdst > 0 ? 3600 : 0);
 #else
 	// tm.tm_gmtoff is the number of seconds EAST of GMT
 	localTZOffset = out.tm_gmtoff;

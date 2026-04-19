@@ -54,7 +54,7 @@ struct index_impl<0, pack<T, Ts...>> {
 };
 
 template <int i, class Pack>
-using index_t = typename index_impl<i, Pack>::type;
+using pack_index_t = typename index_impl<i, Pack>::type;
 
 template <class T, typename = void>
 struct fb_must_appear_last_t : std::false_type {};
@@ -162,7 +162,7 @@ struct union_like_traits : std::false_type {
 	static bool empty(const Member& variant, Context&);
 
 	template <int i, class Context>
-	static const index_t<i, alternatives>& get(const Member&, Context&);
+	static const pack_index_t<i, alternatives>& get(const Member&, Context&);
 
 	template <int i, class Alternative, class Context>
 	static void assign(Member&, const Alternative&, Context&);
@@ -179,10 +179,10 @@ struct struct_like_traits : std::false_type {
 	using types = pack<>;
 
 	template <int i, class Context>
-	static const index_t<i, types>& get(const Member&, Context&);
+	static const pack_index_t<i, types>& get(const Member&, Context&);
 
 	template <int i, class Context>
-	static void assign(Member&, const index_t<i, types>&, Context&);
+	static void assign(Member&, const pack_index_t<i, types>&, Context&);
 
 	template <class Context>
 	static void done(Member&, Context&);
@@ -202,13 +202,13 @@ struct union_like_traits<std::variant<Alternatives...>> : std::true_type {
 	}
 
 	template <int i, class Context>
-	static const index_t<i, alternatives>& get(const Member& variant, Context&) {
-		return std::get<index_t<i, alternatives>>(variant);
+	static const pack_index_t<i, alternatives>& get(const Member& variant, Context&) {
+		return std::get<pack_index_t<i, alternatives>>(variant);
 	}
 
 	template <size_t i, class Alternative, class Context>
 	static void assign(Member& member, const Alternative& a, Context&) {
-		static_assert(std::is_same_v<index_t<i, alternatives>, Alternative>);
+		static_assert(std::is_same_v<pack_index_t<i, alternatives>, Alternative>);
 		member = a;
 	}
 };
