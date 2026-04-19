@@ -329,12 +329,11 @@ UID getSharedMemoryMachineId() {
 	// Don't use shared memory if DEBUG_DETERMINISM is set
 	return newUID;
 #else
-	// Opt-out via env var.  Set FDB_SKIP_SHARED_MEMORY_MACHINE_ID=1 when running
-	// on platforms where boost::interprocess::managed_shared_memory does not
-	// behave well (observed on illumos with boost 1.86: the creator path leaves
-	// /tmp/.SHMD* at size 0 and subsequent opens spin indefinitely).  Single-
-	// process deployments don't need the coordinated machine id; other
-	// deployments should use an explicit --machine-id argument instead.
+	// Last-resort opt-out for environments where boost::interprocess cannot
+	// initialise the managed_shared_memory segment.  illumos used to fail here
+	// via posix_fallocate(EINVAL); cmake/boost-illumos-fallocate-fallback.patch
+	// now fixes that, but the env var is retained so operators can still
+	// bypass the SHM machine-id logic without rebuilding.
 	if (char const* v = ::getenv("FDB_SKIP_SHARED_MEMORY_MACHINE_ID");
 	    v != nullptr && v[0] != '\0' && v[0] != '0') {
 		return newUID;

@@ -1,0 +1,30 @@
+Tolerate EINVAL from posix_fallocate when sizing a shared_memory_object.
+
+On illumos, posix_fallocate(3C) is implemented via fcntl(F_ALLOCSP), which
+returns EINVAL when invoked on a descriptor produced by shm_open(3C).  The
+Linux fallocate(2) path does not exhibit this, so upstream only tolerates
+EOPNOTSUPP/ENODEV before falling through to ftruncate.
+
+Without this patch, the creator of a managed_shared_memory segment throws
+interprocess_exception before ever calling ftruncate; the file at
+/tmp/.SHMD<name> is left at size 0, and any subsequent open_or_create spins
+indefinitely in do_map_after_open waiting for the size header to appear.
+
+Treat EINVAL as "fallocate unsupported on this fd" and fall through to
+ftruncate, which is always correct for shm_open fds on any POSIX platform.
+
+--- a/boost/interprocess/shared_memory_object.hpp
++++ b/boost/interprocess/shared_memory_object.hpp
+@@ -465,7 +465,11 @@ inline void shared_memory_object::truncate(offset_t length)
+       ret = posix_fallocate(m_handle, 0, length);
+    }
+
+-   if (ret && ret != EOPNOTSUPP && ret != ENODEV){
++   // EINVAL added for illumos: posix_fallocate() there routes through
++   // fcntl(F_ALLOCSP) which is not supported on shm_open() fds and returns
++   // EINVAL.  Falling through to ftruncate is always correct for shm fds
++   // on any POSIX platform.
++   if (ret && ret != EOPNOTSUPP && ret != ENODEV && ret != EINVAL){
+       error_info err(ret);
+       throw interprocess_exception(err);
+    }
