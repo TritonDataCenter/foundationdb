@@ -353,7 +353,7 @@ struct union_like_traits<ErrorOr<T>> : std::true_type {
 	}
 
 	template <int i, class Context>
-	static const index_t<i, alternatives>& get(const Member& m, Context&) {
+	static const pack_index_t<i, alternatives>& get(const Member& m, Context&) {
 		if constexpr (i == 0) {
 			return m.getError();
 		} else {

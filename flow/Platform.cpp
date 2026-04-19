@@ -24,6 +24,7 @@
 #endif // _WIN32
 
 #include "flow/Platform.h"
+#include "flow/IllumosPlatform.h"
 
 #include <algorithm>
 #include <iostream>
@@ -161,6 +162,29 @@ static_assert(std::is_same<boost::asio::ip::address_v6::bytes_type, std::array<u
 #include <libutil.h>
 #endif // __FreeBSD__
 
+#if defined(__sun) && defined(__SVR4)
+/* illumos / SmartOS platform includes */
+/* Processor affinity / binding */
+#include <sys/processor.h>
+#include <sys/procset.h>
+/* Thread priority / scheduling */
+#include <sched.h>
+#include <sys/resource.h>
+/* Crash handling */
+#include <signal.h>
+/* illumos process / system introspection */
+#include <procfs.h>
+#include <sys/utsname.h>
+/* Kernel statistics */
+#include <kstat.h>
+/* Loadable-object (ELF) dynamic linking helpers */
+#include <libelf.h>
+/* Network info */
+#include <net/if.h>
+#include <netinet/in.h>
+#include <netinet/tcp.h>
+#endif // __sun && __SVR4
+
 #ifdef __APPLE__
 /* Needed for cross-platform 'environ' */
 #include <crt_externs.h>
@@ -260,6 +284,9 @@ double getProcessorTimeThread() {
 	return FiletimeAsInt64(ftKernel) / double(1e7) + FiletimeAsInt64(ftUser) / double(1e7);
 #elif defined(__linux__) || defined(__FreeBSD__)
 	return getProcessorTimeGeneric(RUSAGE_THREAD);
+#elif defined(__sun) && defined(__SVR4)
+	// illumos: per-thread rusage is RUSAGE_LWP.
+	return getProcessorTimeGeneric(RUSAGE_LWP);
 #elif defined(__APPLE__)
 	/* No RUSAGE_THREAD so we use the lower level interface */
 	struct thread_basic_info info;
@@ -334,6 +361,8 @@ uint64_t getResidentMemoryUsage() {
 	rssize = (uint64_t)procstk.ki_rssize;
 
 	return rssize;
+#elif defined(__sun) && defined(__SVR4)
+	return illumos::getResidentMemoryBytes();
 #elif defined(_WIN32)
 	PROCESS_MEMORY_COUNTERS_EX pmc;
 	if (!GetProcessMemoryInfo(GetCurrentProcess(), (PPROCESS_MEMORY_COUNTERS)&pmc, sizeof(pmc))) {
@@ -394,6 +423,8 @@ uint64_t getMemoryUsage() {
 	vmsize = (uint64_t)procstk.ki_size >> PAGE_SHIFT;
 
 	return vmsize;
+#elif defined(__sun) && defined(__SVR4)
+	return illumos::getVirtualMemoryBytes();
 #elif defined(_WIN32)
 	PROCESS_MEMORY_COUNTERS_EX pmc;
 	if (!GetProcessMemoryInfo(GetCurrentProcess(), (PPROCESS_MEMORY_COUNTERS)&pmc, sizeof(pmc))) {
@@ -602,6 +633,10 @@ void getMachineRAMInfo(MachineRAMInfo& memInfo) {
 	    pagesize * (vm_stat.free_count + vm_stat.active_count + vm_stat.inactive_count + vm_stat.wire_count);
 	memInfo.available = pagesize * vm_stat.free_count;
 	memInfo.committed = memInfo.total - memInfo.available;
+#elif defined(__sun) && defined(__SVR4)
+	memInfo.total = static_cast<int64_t>(illumos::getTotalMemoryBytes());
+	memInfo.available = static_cast<int64_t>(illumos::getAvailableMemoryBytes());
+	memInfo.committed = memInfo.total - memInfo.available;
 #else
 #warning getMachineRAMInfo unimplemented on this platform
 #endif
@@ -626,7 +661,7 @@ Error systemErrorCodeToError() {
 void getDiskBytes(std::string const& directory, int64_t& free, int64_t& total) {
 	INJECT_FAULT(platform_error, "getDiskBytes"); // Get disk bytes failed
 #if defined(__unixish__)
-#if defined(__linux__) || defined(__FreeBSD__)
+#if defined(__linux__) || defined(__FreeBSD__) || (defined(__sun) && defined(__SVR4)) || (defined(__sun) && defined(__SVR4))
 	struct statvfs buf;
 	if (statvfs(directory.c_str(), &buf)) {
 		Error e = systemErrorCodeToError();
@@ -1161,6 +1196,67 @@ dev_t getDeviceId(std::string path) {
 }
 
 #endif
+
+#if defined(__sun) && defined(__SVR4)
+void getNetworkTraffic(const IPAddress& ip,
+                       uint64_t& bytesSent,
+                       uint64_t& bytesReceived,
+                       uint64_t& outSegs,
+                       uint64_t& retransSegs) {
+	INJECT_FAULT(platform_error, "getNetworkTraffic");
+	const char* ifa_name = nullptr;
+	try {
+		ifa_name = getInterfaceName(ip);
+	} catch (Error& e) {
+		if (e.code() != error_code_platform_error) {
+			throw;
+		}
+	}
+	illumos::LinkCounters lc;
+	if (illumos::readLinkCounters(ifa_name ? ifa_name : "", lc)) {
+		bytesSent = lc.bytesSent;
+		bytesReceived = lc.bytesReceived;
+	}
+	illumos::TcpCounters tc;
+	if (illumos::readTcpCounters(tc)) {
+		outSegs = tc.outSegs;
+		retransSegs = tc.retransSegs;
+	}
+}
+
+void getMachineLoad(uint64_t& idleTime, uint64_t& totalTime, bool logDetails) {
+	INJECT_FAULT(platform_error, "getMachineLoad");
+	illumos::CpuTicks ct;
+	if (illumos::readCpuTicks(ct)) {
+		idleTime = ct.idle;
+		totalTime = ct.idle + ct.user + ct.system + ct.iowait;
+	}
+}
+
+DiskStatistics getDiskStatistics(std::string const& directory) {
+	INJECT_FAULT(platform_error, "getDiskStatistics");
+	// TODO(illumos): aggregate kstat disk:N:*.  For the initial port we leave
+	// the counters at zero so deltas report zero — disk IOPS tracing will be
+	// absent but correctness is unaffected.
+	(void)directory;
+	return DiskStatistics{};
+}
+
+dev_t getDeviceId(std::string path) {
+	struct stat statInfo;
+	while (true) {
+		int returnValue = stat(path.c_str(), &statInfo);
+		if (!returnValue) break;
+		if (errno == ENOENT) {
+			path = parentDirectory(path);
+		} else {
+			TraceEvent(SevError, "GetDeviceIdError").detail("Path", path).GetLastError();
+			throw platform_error();
+		}
+	}
+	return statInfo.st_dev;
+}
+#endif // __sun && __SVR4
 
 #ifdef __APPLE__
 void getNetworkTraffic(const IPAddress& ip,
@@ -1814,7 +1910,7 @@ struct OffsetTimer {
 		return offset + count * secondsPerCount;
 	}
 };
-#elif defined(__linux__) || defined(__FreeBSD__)
+#elif defined(__linux__) || defined(__FreeBSD__) || (defined(__sun) && defined(__SVR4))
 #define DOUBLETIME(ts) (double(ts.tv_sec) + (ts.tv_nsec * 1e-9))
 #ifndef CLOCK_MONOTONIC_RAW
 #define CLOCK_MONOTONIC_RAW                                                                                            \
@@ -1883,7 +1979,7 @@ double timer() {
 	GetSystemTimeAsFileTime(&fileTime);
 	static_assert(sizeof(fileTime) == sizeof(uint64_t), "FILETIME size wrong");
 	return (*(uint64_t*)&fileTime - FILETIME_C_EPOCH) * 100e-9;
-#elif defined(__linux__) || defined(__FreeBSD__)
+#elif defined(__linux__) || defined(__FreeBSD__) || (defined(__sun) && defined(__SVR4))
 	struct timespec ts;
 	clock_gettime(CLOCK_REALTIME, &ts);
 	return double(ts.tv_sec) + (ts.tv_nsec * 1e-9);
@@ -1905,7 +2001,7 @@ uint64_t timer_int() {
 	GetSystemTimeAsFileTime(&fileTime);
 	static_assert(sizeof(fileTime) == sizeof(uint64_t), "FILETIME size wrong");
 	return (*(uint64_t*)&fileTime - FILETIME_C_EPOCH);
-#elif defined(__linux__) || defined(__FreeBSD__)
+#elif defined(__linux__) || defined(__FreeBSD__) || (defined(__sun) && defined(__SVR4))
 	struct timespec ts;
 	clock_gettime(CLOCK_REALTIME, &ts);
 	return uint64_t(ts.tv_sec) * 1e9 + ts.tv_nsec;
@@ -1951,7 +2047,7 @@ std::string epochsToGMTString(double epochs) {
 }
 
 std::vector<std::string> getEnvironmentKnobOptions() {
-#if defined(__FreeBSD__)
+#if defined(__FreeBSD__) || (defined(__sun) && defined(__SVR4))
 	extern char** environ;
 #endif
 	constexpr const size_t ENVKNOB_PREFIX_LEN = sizeof(ENVIRONMENT_KNOB_OPTION_PREFIX) - 1;
@@ -1969,7 +2065,7 @@ std::vector<std::string> getEnvironmentKnobOptions() {
 	}
 #else
 	char** e = nullptr;
-#if defined(__linux__) || defined(__FreeBSD__)
+#if defined(__linux__) || defined(__FreeBSD__) || (defined(__sun) && defined(__SVR4))
 	e = environ;
 #elif defined(__APPLE__)
 	e = *_NSGetEnviron();
@@ -2010,7 +2106,7 @@ void setMemoryQuota(size_t limit) {
 	}
 	if (!AssignProcessToJobObject(job, GetCurrentProcess()))
 		TraceEvent(SevWarn, "FailedToSetMemoryLimit").GetLastError();
-#elif defined(__linux__) || defined(__FreeBSD__)
+#elif defined(__linux__) || defined(__FreeBSD__) || (defined(__sun) && defined(__SVR4))
 	struct rlimit rlim;
 	if (getrlimit(RLIMIT_AS, &rlim)) {
 		TraceEvent(SevError, "GetMemoryLimit").GetLastError();
@@ -2148,7 +2244,7 @@ static void* allocateInternal(size_t length, bool largePages, bool guardPages) {
 		flags |= MAP_HUGETLB;
 
 	return mmapInternal(length, flags, guardPages);
-#elif defined(__APPLE__) || defined(__FreeBSD__)
+#elif defined(__APPLE__) || defined(__FreeBSD__) || (defined(__sun) && defined(__SVR4))
 	int flags = MAP_PRIVATE | MAP_ANON;
 
 	return mmapInternal(length, flags, guardPages);
@@ -2253,7 +2349,7 @@ void renameFile(std::string const& fromPath, std::string const& toPath) {
 		// renamedFile();
 		return;
 	}
-#elif (defined(__linux__) || defined(__APPLE__) || defined(__FreeBSD__))
+#elif (defined(__linux__) || defined(__APPLE__) || defined(__FreeBSD__) || (defined(__sun) && defined(__SVR4)))
 	if (!rename(fromPath.c_str(), toPath.c_str())) {
 		// FIXME: We cannot inject faults after renaming the file, because we could end up with two asyncFileNonDurable
 		// open for the same file renamedFile();
@@ -2425,7 +2521,7 @@ bool createDirectory(std::string const& directory) {
 	Error e = systemErrorCodeToError();
 	TraceEvent(SevError, "CreateDirectory").error(e).detail("Directory", directory).GetLastError();
 	throw e;
-#elif (defined(__linux__) || defined(__APPLE__) || defined(__FreeBSD__))
+#elif (defined(__linux__) || defined(__APPLE__) || defined(__FreeBSD__) || (defined(__sun) && defined(__SVR4)))
 	size_t sep = 0;
 	do {
 		sep = directory.find_first_of('/', sep + 1);
@@ -2578,7 +2674,7 @@ std::string abspath(std::string const& path_, bool resolveLinks, bool mustExist)
 		if (*x == '/')
 			*x = CANONICAL_PATH_SEPARATOR;
 	return nameBuffer;
-#elif (defined(__linux__) || defined(__APPLE__) || defined(__FreeBSD__))
+#elif (defined(__linux__) || defined(__APPLE__) || defined(__FreeBSD__) || (defined(__sun) && defined(__SVR4)))
 	char result[PATH_MAX];
 	// Must resolve links, so first try realpath on the whole thing
 	const char* r = realpath(path.c_str(), result);
@@ -2697,7 +2793,7 @@ AsyncResult<std::vector<std::string>> findFiles(std::string directory,
 	co_return result;
 }
 
-#elif (defined(__linux__) || defined(__APPLE__) || defined(__FreeBSD__))
+#elif (defined(__linux__) || defined(__APPLE__) || defined(__FreeBSD__) || (defined(__sun) && defined(__SVR4)))
 #define FILE_ATTRIBUTE_DATA mode_t
 
 bool acceptFile(FILE_ATTRIBUTE_DATA fileAttributes, std::string const& name, std::string const& extension) {
@@ -2809,7 +2905,7 @@ AsyncResult<Void> findFilesRecursivelyAsync(std::string path, std::vector<std::s
 void threadSleep(double seconds) {
 #ifdef _WIN32
 	Sleep((DWORD)(seconds * 1e3));
-#elif (defined(__linux__) || defined(__APPLE__) || defined(__FreeBSD__))
+#elif (defined(__linux__) || defined(__APPLE__) || defined(__FreeBSD__) || (defined(__sun) && defined(__SVR4)))
 	struct timespec req, rem;
 
 	req.tv_sec = seconds;
@@ -2860,7 +2956,7 @@ void setCloseOnExec(int fd) {
 THREAD_HANDLE startThread(void (*func)(void*), void* arg, int stackSize, const char* name) {
 	return (void*)_beginthread(func, stackSize, arg);
 }
-#elif (defined(__linux__) || defined(__APPLE__) || defined(__FreeBSD__))
+#elif (defined(__linux__) || defined(__APPLE__) || defined(__FreeBSD__) || (defined(__sun) && defined(__SVR4)))
 
 // We don't run arbitrary user-supplied functions via pthread_create.
 // The reason is that if they have bugs, then those threads die without any
@@ -2934,7 +3030,7 @@ THREAD_HANDLE startThread(void* (*func)(void*), void* arg, int stackSize, const 
 void waitThread(THREAD_HANDLE thread) {
 #ifdef _WIN32
 	WaitForSingleObject(thread, INFINITE);
-#elif (defined(__linux__) || defined(__APPLE__) || defined(__FreeBSD__))
+#elif (defined(__linux__) || defined(__APPLE__) || defined(__FreeBSD__) || (defined(__sun) && defined(__SVR4)))
 	pthread_join(thread, nullptr);
 #else
 #error Port me!
@@ -2977,7 +3073,7 @@ int64_t fileSize(std::string const& filename) {
 		return 0;
 	else
 		return file_status.st_size;
-#elif (defined(__linux__) || defined(__APPLE__) || defined(__FreeBSD__))
+#elif (defined(__linux__) || defined(__APPLE__) || defined(__FreeBSD__) || (defined(__sun) && defined(__SVR4)))
 	struct stat file_status;
 	if (stat(filename.c_str(), &file_status) != 0)
 		return 0;
@@ -2995,7 +3091,7 @@ time_t fileModifiedTime(const std::string& filename) {
 		return 0;
 	else
 		return file_status.st_mtime;
-#elif (defined(__linux__) || defined(__APPLE__) || defined(__FreeBSD__))
+#elif (defined(__linux__) || defined(__APPLE__) || defined(__FreeBSD__) || (defined(__sun) && defined(__SVR4)))
 	struct stat file_status;
 	if (stat(filename.c_str(), &file_status) != 0)
 		return 0;
@@ -3143,7 +3239,7 @@ std::string getDefaultConfigPath() {
 	return _filepath + "\\foundationdb";
 #elif defined(__linux__)
 	return "/etc/foundationdb";
-#elif defined(__APPLE__) || defined(__FreeBSD__)
+#elif defined(__APPLE__) || defined(__FreeBSD__) || (defined(__sun) && defined(__SVR4))
 	return "/usr/local/etc/foundationdb";
 #else
 #error Port me!
@@ -3281,7 +3377,7 @@ int eraseDirectoryRecursive(std::string const& dir) {
 	__eraseDirectoryRecursiveCount = 0;
 #ifdef _WIN32
 	system(("rd /s /q \"" + dir + "\"").c_str());
-#elif defined(__linux__) || defined(__APPLE__) || defined(__FreeBSD__)
+#elif defined(__linux__) || defined(__APPLE__) || defined(__FreeBSD__) || (defined(__sun) && defined(__SVR4))
 	int error = nftw(
 	    dir.c_str(),
 	    [](const char* fpath, const struct stat* sb, int typeflag, struct FTW* ftwbuf) -> int {
@@ -3432,6 +3528,10 @@ ImageInfo getImageInfo() {
 #ifdef __linux__
 #include <link.h>
 #endif
+#if defined(__sun) && defined(__SVR4)
+// illumos: struct link_map is declared in <sys/link.h>; dladdr1() is in <dlfcn.h>.
+#include <sys/link.h>
+#endif
 
 platform::ImageInfo getImageInfo(const void* symbol) {
 	Dl_info info;
@@ -3440,6 +3540,10 @@ platform::ImageInfo getImageInfo(const void* symbol) {
 #ifdef __linux__
 	link_map* linkMap = nullptr;
 	int res = dladdr1(symbol, &info, (void**)&linkMap, RTLD_DL_LINKMAP);
+#elif defined(__sun) && defined(__SVR4)
+	// illumos's dladdr1 matches Linux's but takes a non-const address.
+	link_map* linkMap = nullptr;
+	int res = dladdr1(const_cast<void*>(symbol), &info, (void**)&linkMap, RTLD_DL_LINKMAP);
 #else
 	int res = dladdr(symbol, &info);
 #endif
@@ -3543,7 +3647,7 @@ std::string format_backtrace(void** addresses, int numAddresses) {
 } // namespace platform
 
 bool isLibraryLoaded(const char* lib_path) {
-#if !defined(__linux__) && !defined(__APPLE__) && !defined(_WIN32) && !defined(__FreeBSD__)
+#if !defined(__linux__) && !defined(__APPLE__) && !defined(_WIN32) && !defined(__FreeBSD__) && !(defined(__sun) && defined(__SVR4))
 #error Port me!
 #endif
 
@@ -3559,7 +3663,7 @@ bool isLibraryLoaded(const char* lib_path) {
 }
 
 void* loadLibrary(const char* lib_path) {
-#if !defined(__linux__) && !defined(__APPLE__) && !defined(_WIN32) && !defined(__FreeBSD__)
+#if !defined(__linux__) && !defined(__APPLE__) && !defined(_WIN32) && !defined(__FreeBSD__) && !(defined(__sun) && defined(__SVR4))
 #error Port me!
 #endif
 
@@ -3645,6 +3749,16 @@ std::string exePath() {
 		} else {
 			return std::string(buf.get());
 		}
+	}
+#elif defined(__sun) && defined(__SVR4)
+	// illumos exposes the resolved executable path through /proc/self/path/a.out.
+	std::unique_ptr<char[]> buf(new char[PATH_MAX]);
+	auto len = readlink("/proc/self/path/a.out", buf.get(), PATH_MAX);
+	if (len > 0 && len < PATH_MAX) {
+		buf[len] = '\0';
+		return std::string(buf.get());
+	} else {
+		throw platform_error();
 	}
 #elif defined(_WIN32)
 	DWORD bufSize = 1024;

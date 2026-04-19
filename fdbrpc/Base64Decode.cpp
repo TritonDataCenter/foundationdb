@@ -29,6 +29,11 @@
 
 namespace {
 
+// illumos <ctype.h> defines _X as a character-class bit; undefine so our
+// local `_X` sentinel compiles.
+#ifdef _X
+#undef _X
+#endif
 constexpr uint8_t _X = 0xff;
 
 template <bool UrlDecode>

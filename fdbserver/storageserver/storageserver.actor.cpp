@@ -6757,7 +6757,7 @@ ACTOR static Future<Void> processSampleFiles(StorageServer* data,
 
 					if (retryCount < maxRetries) {
 						// Wait before retrying, with exponential backoff
-						wait(delay(0.1 * pow(2, retryCount))); // Consider adding jitter
+						wait(delay(0.1 * pow(2.0, retryCount))); // Consider adding jitter
 						continue; // Retry reading the file
 					}
 					// On final retry failure, throw the last error encountered

@@ -24,7 +24,8 @@
 
 #include "flow/config.h"
 
-#if (defined(__linux__) || defined(__APPLE__) || defined(__FreeBSD__))
+#if (defined(__linux__) || defined(__APPLE__) || defined(__FreeBSD__) || \
+     (defined(__sun) && defined(__SVR4)))
 #define __unixish__ 1
 #endif
 
@@ -183,6 +184,8 @@ THREAD_HANDLE startThread(void*(func)(void*), void* arg, int stackSize = 0, cons
 #define DYNAMIC_LIB_EXT ".so"
 #elif defined(__APPLE__)
 #define DYNAMIC_LIB_EXT ".dylib"
+#elif defined(__sun) && defined(__SVR4)
+#define DYNAMIC_LIB_EXT ".so"
 #else
 #error Port me
 #endif
@@ -514,7 +517,7 @@ inline static uint64_t timestampCounter() {
 }
 #elif defined(_powerpc64_)
 #include <emmintrin.h>
-#elif defined(__linux__)
+#elif defined(__linux__) || (defined(__sun) && defined(__SVR4))
 #include <x86intrin.h>
 #define timestampCounter() __rdtsc()
 #elif defined(__APPLE__) // macOS on Intel
@@ -760,6 +763,12 @@ inline static void* aligned_alloc(size_t alignment, size_t size) {
 	return ptr;
 }
 #endif
+inline static void aligned_free(void* ptr) {
+	free(ptr);
+}
+#elif defined(__sun) && defined(__SVR4)
+// illumos: aligned_alloc() is provided by libc in <stdlib.h> (C11);
+// there is no aligned_free, just free().
 inline static void aligned_free(void* ptr) {
 	free(ptr);
 }

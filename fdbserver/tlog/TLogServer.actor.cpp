@@ -4006,7 +4006,7 @@ TEST_CASE("Lfdbserver/tlogserver/VersionMessagesOverheadFactor") {
 			DequeAllocator<TestType> allocator;
 			std::deque<TestType, DequeAllocator<TestType>> d(allocator);
 
-			int numElements = deterministicRandom()->randomInt(pow(10, i - 1), pow(10, i));
+			int numElements = deterministicRandom()->randomInt(pow(10.0, i - 1), pow(10.0, i));
 			for (int k = 0; k < numElements; ++k) {
 				d.push_back(TestType());
 			}

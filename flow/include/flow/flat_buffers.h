@@ -71,7 +71,7 @@ struct struct_like_traits<std::tuple<Ts...>> : std::true_type {
 	using types = pack<Ts...>;
 
 	template <int i, class Context>
-	static const index_t<i, types>& get(const Member& m, Context&) {
+	static const pack_index_t<i, types>& get(const Member& m, Context&) {
 		return std::get<i>(m);
 	}
 
@@ -842,7 +842,7 @@ private:
 				                          writer,
 				                          vtables,
 				                          this->context());
-				if constexpr (use_indirection<index_t<Alternative, typename UnionTraits::alternatives>>) {
+				if constexpr (use_indirection<pack_index_t<Alternative, typename UnionTraits::alternatives>>) {
 					return result;
 				}
 				writer.write(&result, writer.current_buffer_size + sizeof(result), sizeof(result));
@@ -867,7 +867,7 @@ private:
 	void load_(uint8_t type_tag, typename UnionTraits::Member& member) {
 		if constexpr (Alternative < pack_size(typename UnionTraits::alternatives{})) {
 			if (type_tag == Alternative) {
-				using AlternativeT = index_t<Alternative, typename UnionTraits::alternatives>;
+				using AlternativeT = pack_index_t<Alternative, typename UnionTraits::alternatives>;
 				AlternativeT alternative;
 				if constexpr (use_indirection<AlternativeT>) {
 					load_helper(alternative, current, context);
@@ -1081,7 +1081,7 @@ struct LoadSaveHelper : Context {
 		using types = typename StructTraits::types;
 		for_each_i<pack_size(types{})>([&](auto i_type) {
 			constexpr int i = decltype(i_type)::value;
-			using type = index_t<i, types>;
+			using type = pack_index_t<i, types>;
 			type t;
 			load_helper(t, current + struct_offset<i>(types{}), *this);
 			StructTraits::template assign<i, type, Context>(member, t, this->context());

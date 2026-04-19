@@ -117,7 +117,7 @@ struct struct_like_traits<Tag> : std::true_type {
 	using types = pack<uint16_t, int8_t>;
 
 	template <int i, class Context>
-	static const index_t<i, types>& get(const Member& m, Context&) {
+	static const pack_index_t<i, types>& get(const Member& m, Context&) {
 		if constexpr (i == 0) {
 			return m.id;
 		} else {
