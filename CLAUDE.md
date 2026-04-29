@@ -15,11 +15,15 @@ ports). `getDiskStatistics` is stubbed to zero pending a `disk:N:*`
 kstat aggregator. USDT probes are off; real DTrace via `dtrace -G` is
 follow-up work. Release binaries are not stripped (~1 GB each).
 
-## Build
+## Build and run
 
-Read [BUILDING-illumos.md](BUILDING-illumos.md) for the complete,
-verified recipe (provisioning, packages, cmake invocation, smoke
-test). The short version, run on an illumos host with pkgsrc:
+- [BUILDING-illumos.md](BUILDING-illumos.md) — the complete verified
+  recipe (provisioning, packages, cmake invocation, smoke test).
+- [RUNNING-foundationdb.md](RUNNING-foundationdb.md) — operator guide:
+  cluster file mental model, single-node smoke, three-node setup,
+  SMF wrapping, gotchas, and operational recipes.
+
+The short build version, run on an illumos host with pkgsrc:
 
 ```sh
 pkgin install gcc13 cmake ninja-build python312 patch git libexecinfo

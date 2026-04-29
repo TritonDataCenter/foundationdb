@@ -218,6 +218,9 @@ EOF
 Expected: `configure new` returns success, the second `fdbcli` prints
 `hello is world`.
 
+For real multi-node clusters, SMF wrapping, and operational recipes,
+see [RUNNING-foundationdb.md](RUNNING-foundationdb.md).
+
 ## Operator notes
 
 - **Allocator**: jemalloc is disabled at build time. The process picks up
