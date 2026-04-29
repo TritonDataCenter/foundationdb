@@ -138,6 +138,13 @@ Building FoundationDB requires at least 8GB of memory. More memory is needed whe
    ctest --output-on-failure -v
    ```
 
+#### illumos / SmartOS
+
+A port to illumos (verified on SmartOS 20250512, gcc 13.3, pkgsrc 2024Q4)
+lives on the `illumos-port` branch. See [BUILDING-illumos.md](BUILDING-illumos.md)
+for tested package list, exact `cmake` invocation, smoke test, and the
+list of components not yet ported (notably `fdbmonitor`).
+
 ### macOS
 
 The build under macOS will work the same way as on Linux. [Homebrew](https://brew.sh/) can be used to install the `boost` library and the `ninja` build tool. Be carefull, curent main branch use boost 1.86, do install this version or just let cmake download one. Also, if swift binding is not interest, use -DBUILD_SWIFT_BINDING=OFF. One more thing, toml11project may block build process, mannualy change "cmake_minimum_required(VERSION 3.1)" to "cmake_minimum_required(VERSION 4.2)" in <BUILD_DIR>toml11Project-prefix/src/toml11Project/CMakeLists.txt and run again.
