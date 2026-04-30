@@ -57,6 +57,17 @@ env_set(USE_JEMALLOC ${jemalloc_default} BOOL "Link with jemalloc")
 if(CMAKE_SYSTEM_NAME STREQUAL "SunOS")
   add_compile_options(
     "$<${is_cxx_compile}:-include${CMAKE_SOURCE_DIR}/flow/include/flow/IllumosPrelude.h>")
+  # illumos hides large parts of POSIX/XOPEN/threads behind feature-test
+  # gates. Set them globally so headers expose strerror_r, the POSIX
+  # pthread_* semantics, and the full <sys/*> type set without per-file
+  # opt-ins.
+  add_compile_definitions(__EXTENSIONS__ _REENTRANT _POSIX_PTHREAD_SEMANTICS)
+  # The fdbserver link peaks at well over 10 GB of resident memory.
+  # Running multiple of these in parallel on a small VM reliably OOMs
+  # the link phase even when the compile phase fits. Constrain the
+  # linker to one job at a time; compile parallelism is unaffected.
+  set_property(GLOBAL PROPERTY JOB_POOLS link_pool=1)
+  set(CMAKE_JOB_POOL_LINK link_pool)
 endif()
 env_set(USE_CUSTOM_JEMALLOC OFF BOOL "Manually download and build jemalloc")
 
