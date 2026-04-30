@@ -24,8 +24,11 @@ Not yet ported (tracked as follow-ups):
 - `getDiskStatistics` is stubbed to zero pending a `disk:N:*` kstat aggregator.
 - USDT probes are disabled; real DTrace integration via `dtrace -G` is a
   separate piece of work.
-- Release binaries are not yet stripped (`fdbserver` is ~1 GB with debug
-  info, ~113 MB text).
+- Binaries are not stripped (`fdbserver` ~1 GB; ~150 MB stripped). The
+  upstream `strip_targets` packaging target depends on `fdbmonitor`,
+  which doesn't yet build on illumos, so it doesn't work as a one-shot
+  here. Use the manual `strip` recipe in "Install" below for shipping
+  artifacts.
 
 ## Verified environment
 
@@ -138,9 +141,12 @@ Notes:
   binary on illumos, so the target succeeds vacuously. Passing an
   explicit target list is faster and cleaner until the port lands.
 - Building uses ~8 GB of memory per parallel job for the heaviest TUs.
-  Drop to `ninja -j2` (or `-j1`) on a small build VM.
-- `fdbserver` lands at ~1 GB with debug info (text is ~113 MB); strip if
-  you're shipping it.
+  Drop to `ninja -j2` (or `-j1`) on a small build VM. Link parallelism
+  is already capped to one job at a time on SunOS by CMake (the
+  `fdbserver` link alone uses over 10 GB), so compile concurrency is
+  what matters.
+- `fdbserver` lands at ~1 GB with debug info (text is ~113 MB). For
+  shipping, strip a copy manually — see "Install" below.
 
 ## Cross-development from another host (optional)
 
@@ -186,7 +192,8 @@ into the build — but it's useful to know what's happening:
 ## Install (optional)
 
 There is no install rule yet for illumos — `ninja install` does not
-produce a usable layout. Copy the binaries to wherever you want them:
+produce a usable layout. Copy the binaries to wherever you want them.
+For development you typically want the unstripped artifacts:
 
 ```sh
 PREFIX=/opt/fdb     # or /usr/local, or anywhere on PATH
@@ -194,6 +201,34 @@ mkdir -p "$PREFIX/bin"
 cp "$BUILD_DIR/bin"/{fdbserver,fdbcli,fdbdr,backup_agent,dr_agent,fdbrestore} \
    "$PREFIX/bin/"
 ```
+
+For shipping, copy the binaries first and then strip the copies — the
+upstream `strip_targets` cmake target pulls in `fdbmonitor` (not yet
+ported), so use `strip(1)` directly. pkgsrc `gcc13` puts a working GNU
+`strip` at `/opt/local/bin/strip`:
+
+```sh
+ninja fdbserver fdbcli fdbbackup
+cp "$BUILD_DIR/bin"/{fdbserver,fdbcli,fdbbackup} "$PREFIX/bin/"
+ln -sf fdbbackup "$PREFIX/bin/backup_agent"
+ln -sf fdbbackup "$PREFIX/bin/dr_agent"
+ln -sf fdbbackup "$PREFIX/bin/fdbdr"
+ln -sf fdbbackup "$PREFIX/bin/fdbrestore"
+strip --strip-debug --strip-unneeded "$PREFIX/bin/fdbserver"
+strip --strip-debug --strip-unneeded "$PREFIX/bin/fdbcli"
+strip --strip-debug --strip-unneeded "$PREFIX/bin/fdbbackup"
+```
+
+If you want to keep debug symbols in a companion file (so `gdb`/`mdb`
+can still resolve types), use `objcopy` first:
+
+```sh
+objcopy --only-keep-debug "$PREFIX/bin/fdbserver" "$PREFIX/bin/fdbserver.debug"
+strip --strip-debug --strip-unneeded "$PREFIX/bin/fdbserver"
+objcopy --add-gnu-debuglink="$PREFIX/bin/fdbserver.debug" "$PREFIX/bin/fdbserver"
+```
+
+Stripped `fdbserver` lands at ~150 MB versus ~1 GB unstripped.
 
 ## Smoke test the build
 

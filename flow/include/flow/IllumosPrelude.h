@@ -41,6 +41,40 @@
  * here, so leave the libc typedef intact.
  */
 
+/*
+ * illumos <sys/regset.h> defines the x86 register names CS, DS, ES, FS,
+ * GS, SS, ERR, EIP, ESP, EBP, EAX, EBX, ECX, EDX, ESI, EDI, EFL, UESP,
+ * TRAPNO and the AMD64 variants as integer macros.  The header is pulled
+ * in transitively by <ucontext.h> and <procfs.h> (used in IllumosPlatform
+ * and Platform).  The macros routinely collide with two-letter or
+ * three-letter identifiers in C++ code (enum values, template parameters,
+ * structure members), so eagerly include the header here and undefine
+ * the macros before any FDB code sees them.  This costs nothing on TUs
+ * that do not need the register names and removes a class of cryptic
+ * compile errors that surface only when an unrelated header path
+ * happens to drag regset.h in first.
+ */
+#include <sys/regset.h>
+#undef CS
+#undef DS
+#undef ES
+#undef FS
+#undef GS
+#undef SS
+#undef ERR
+#undef EIP
+#undef ESP
+#undef EBP
+#undef EAX
+#undef EBX
+#undef ECX
+#undef EDX
+#undef ESI
+#undef EDI
+#undef EFL
+#undef UESP
+#undef TRAPNO
+
 #endif /* __sun && __SVR4 */
 
 #endif /* FLOW_ILLUMOS_PRELUDE_H */
