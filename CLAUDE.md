@@ -11,9 +11,11 @@ Working: `fdbserver`, `fdbcli`, `fdbdr`, `backup_agent`, `dr_agent`,
 `configure new` + set/get round-trip via `fdbcli`.
 
 Not yet ported: `fdbmonitor` (uses kqueue/kevent — needs illumos event
-ports). `getDiskStatistics` is stubbed to zero pending a `disk:N:*`
-kstat aggregator. USDT probes are off; real DTrace via `dtrace -G` is
-follow-up work. Release binaries are not stripped (~1 GB each).
+ports). `getDiskStatistics` is system-wide rather than per-directory
+(equivalent on a single-disk/single-pool host). USDT probes are off;
+real DTrace via `dtrace -G` is follow-up work. Release binaries are
+not stripped at build time (~1 GB each); see BUILDING-illumos.md for
+the manual `strip` recipe.
 
 ## Build and run
 
