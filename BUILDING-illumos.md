@@ -21,7 +21,11 @@ round-trips through `fdbcli`.
 Not yet ported (tracked as follow-ups):
 
 - `fdbmonitor` — uses kqueue/kevent; needs a port to illumos event ports.
-- `getDiskStatistics` is stubbed to zero pending a `disk:N:*` kstat aggregator.
+- `getDiskStatistics` reports a system-wide aggregate across every
+  disk-class kstat instance, not the device backing the data folder.
+  Per-directory filtering would need `statvfs` -> minor device -> kstat
+  resolution; on a single-disk or single-pool host the aggregate is
+  equivalent.
 - USDT probes are disabled; real DTrace integration via `dtrace -G` is a
   separate piece of work.
 - Binaries are not stripped (`fdbserver` ~1 GB; ~150 MB stripped). The
