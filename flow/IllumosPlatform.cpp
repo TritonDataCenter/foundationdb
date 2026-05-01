@@ -209,6 +209,34 @@ bool readTcpCounters(TcpCounters& out) {
 	return true;
 }
 
+bool readDiskIo(DiskIo& out) {
+	KstatCtl k;
+	if (!k) return false;
+
+	out = DiskIo{};
+	bool any = false;
+	for (kstat_t* ks = k.ctl->kc_chain; ks != nullptr; ks = ks->ks_next) {
+		if (ks->ks_type != KSTAT_TYPE_IO) continue;
+		// Filter by ks_class == "disk" to catch every driver (sd, nvme,
+		// blkdev for virtio-block, cmdk for IDE) without enumerating
+		// modules.  The nvme module also exposes admin-queue kstats with
+		// different classes — those are skipped by the class check.
+		if (std::strcmp(ks->ks_class, "disk") != 0) continue;
+		if (::kstat_read(k.ctl, ks, nullptr) == -1) continue;
+
+		// KSTAT_TYPE_IO data is a single kstat_io_t pointed at by ks_data.
+		const kstat_io_t* io = static_cast<const kstat_io_t*>(ks->ks_data);
+		out.reads += io->reads;
+		out.writes += io->writes;
+		out.bytesRead += io->nread;
+		out.bytesWritten += io->nwritten;
+		out.inFlight += io->wcnt + io->rcnt;
+		out.serviceTimeNs += static_cast<uint64_t>(io->rtime);
+		any = true;
+	}
+	return any;
+}
+
 } // namespace illumos
 
 #endif // __sun && __SVR4

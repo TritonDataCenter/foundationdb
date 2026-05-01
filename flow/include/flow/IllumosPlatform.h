@@ -70,6 +70,27 @@ struct TcpCounters {
 };
 bool readTcpCounters(TcpCounters& out);
 
+// Aggregate KSTAT_TYPE_IO counters across every disk-class kstat instance.
+// illumos exposes per-device IO stats as kstat_io_t, which is shaped
+// differently from the named-data kstats used elsewhere in this file (the
+// data is a single struct, not a name->value map).  We filter by
+// ks_class == "disk" so every backend driver is covered: `sd` (SCSI/ATA),
+// `nvme` (data queues), `blkdev` (virtio-block on SmartOS zones / KVM),
+// `cmdk` (IDE).  Per-directory filtering would require resolving directory
+// -> minor device -> kstat instance and is not done here; on a host with
+// one disk or pool this system-wide aggregate matches what the Linux
+// per-device path returns.
+// Times are in nanoseconds (kstat hrtime_t); convert to ms at the call site.
+struct DiskIo {
+	uint64_t reads = 0; // count
+	uint64_t writes = 0; // count
+	uint64_t bytesRead = 0;
+	uint64_t bytesWritten = 0;
+	uint64_t inFlight = 0; // wait + run queue depth
+	uint64_t serviceTimeNs = 0; // cumulative kstat rtime
+};
+bool readDiskIo(DiskIo& out);
+
 } // namespace illumos
 
 #endif // __sun && __SVR4
