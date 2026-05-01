@@ -1241,11 +1241,33 @@ void getMachineLoad(uint64_t& idleTime, uint64_t& totalTime, bool logDetails) {
 
 DiskStatistics getDiskStatistics(std::string const& directory) {
 	INJECT_FAULT(platform_error, "getDiskStatistics");
-	// TODO(illumos): aggregate kstat disk:N:*.  For the initial port we leave
-	// the counters at zero so deltas report zero — disk IOPS tracing will be
-	// absent but correctness is unaffected.
+	// We do not yet resolve `directory` -> kstat instance (that requires
+	// statvfs -> minor device -> kstat instance walks not implemented here).
+	// The system-wide aggregate across every sd:N:* and nvme:N:* device
+	// matches the per-device Linux path on a single-disk or single-pool
+	// host, which covers the common deployment.  See illumos::readDiskIo
+	// for the limitation.
 	(void)directory;
-	return DiskStatistics{};
+	illumos::DiskIo io;
+	if (!illumos::readDiskIo(io)) {
+		return DiskStatistics{};
+	}
+	DiskStatistics out;
+	out.reads = io.reads;
+	out.writes = io.writes;
+	out.readBytes = io.bytesRead;
+	out.writeBytes = io.bytesWritten;
+	// kstat_io_t reports bytes; FDB's other platforms report 512-byte
+	// "sectors" alongside bytes for compatibility with /proc/diskstats.
+	// Mirror that synthesis here.
+	out.readSectors = io.bytesRead / 512;
+	out.writeSectors = io.bytesWritten / 512;
+	out.currentIOs = io.inFlight;
+	// kstat_io_t exposes total service time (rtime) but does not split by
+	// direction.  Report it on IOMilliSecs and leave the per-direction
+	// fields at 0; consumers either use the totals or tolerate the gap.
+	out.IOMilliSecs = io.serviceTimeNs / 1000000ull;
+	return out;
 }
 
 dev_t getDeviceId(std::string path) {
