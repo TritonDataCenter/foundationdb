@@ -22,6 +22,21 @@ if(WITH_ROCKSDB)
   if(WITH_LIBURING)
     find_package(uring REQUIRED)
   endif()
+else()
+  # RocksDBCheckpointUtils.cpp is compiled unconditionally and includes
+  # fdbserver/core/FDBRocksDBVersion.h before its WITH_ROCKSDB-guarded body.
+  # CompileRocksDB only generates that header when rocksdb is enabled, so
+  # generate a stub here to keep the rocksdb-off build (the illumos default)
+  # compiling.
+  set(FDB_ROCKSDB_MAJOR 0)
+  set(FDB_ROCKSDB_MINOR 0)
+  set(FDB_ROCKSDB_PATCH 0)
+  set(FDB_ROCKSDB_GIT_HASH "")
+  file(MAKE_DIRECTORY ${CMAKE_BINARY_DIR}/fdbserver/core/include/fdbserver/core)
+  configure_file(
+    ${CMAKE_SOURCE_DIR}/cmake/FDBRocksDBVersion.h.in
+    ${CMAKE_BINARY_DIR}/fdbserver/core/include/fdbserver/core/FDBRocksDBVersion.h
+    @ONLY)
 endif()
 
 add_subdirectory(core)
