@@ -29,6 +29,11 @@ OUT_DIR="${OUT_DIR:-/var/tmp/fdb-port/out}"
 export PATH=/opt/local/gcc13/bin:/opt/local/bin:/opt/local/sbin:/usr/bin:/usr/sbin:/sbin:${PATH:-}
 export CC="${CC:-/opt/local/gcc13/bin/gcc}"
 export CXX="${CXX:-/opt/local/gcc13/bin/g++}"
+# cmake 4 (pkgsrc trunk) dropped support for cmake_minimum_required < 3.5, which
+# some bundled ExternalProjects still declare (toml11 v3.4.0, ...). cmake reads
+# this from the env, so it reaches the sub-project configures too. FDB's verified
+# env used cmake 3.31; this lets the newer trunk cmake build the old deps.
+export CMAKE_POLICY_VERSION_MINIMUM=3.5
 
 for c in "$CC" "$CXX" cmake ninja python3 strip gtar digest; do
     command -v "$c" >/dev/null 2>&1 || { echo "missing required command: $c" >&2; exit 1; }
