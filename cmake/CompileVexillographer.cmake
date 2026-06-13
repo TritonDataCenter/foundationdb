@@ -15,6 +15,11 @@ if(WIN32)
     "System.Data"
     "System.Xml"
     "System.Xml.Linq")
+elseif(FDB_USE_PYTHON_CODEGEN)
+  # illumos: vexillographer.py is run directly (see vexillographer_compile).
+  # Target exists only for dependency ordering.
+  add_custom_target(vexillographer DEPENDS
+    ${CMAKE_CURRENT_SOURCE_DIR}/fdbclient/vexillographer/vexillographer.py)
 else()
   set(VEXILLOGRAPHER_REFERENCES "-r:System,System.Core,System.Data,System.Xml,System.Xml.Linq")
   set(VEXILLOGRAPHER_EXE "${CMAKE_CURRENT_BINARY_DIR}/vexillographer.exe")
@@ -39,6 +44,12 @@ function(vexillographer_compile)
       COMMAND $<TARGET_FILE:vexillographer> ${CMAKE_SOURCE_DIR}/fdbclient/vexillographer/fdb.options ${VX_LANG} ${VX_OUT}
       DEPENDS ${CMAKE_SOURCE_DIR}/fdbclient/vexillographer/fdb.options vexillographer
       COMMENT "Generate FDBOptions ${VX_LANG} files")
+  elseif(FDB_USE_PYTHON_CODEGEN)
+    add_custom_command(
+      OUTPUT ${VX_OUTPUT}
+      COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/fdbclient/vexillographer/vexillographer.py ${CMAKE_SOURCE_DIR}/fdbclient/vexillographer/fdb.options ${VX_LANG} ${VX_OUT}
+      DEPENDS ${CMAKE_SOURCE_DIR}/fdbclient/vexillographer/fdb.options vexillographer
+      COMMENT "Generate FDBOptions ${VX_LANG} files (python)")
   else()
     add_custom_command(
       OUTPUT ${VX_OUTPUT}

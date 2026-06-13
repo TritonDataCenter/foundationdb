@@ -15,6 +15,17 @@ if(WIN32)
     "Microsoft.CSharp"
     "System.Data"
     "System.Xml")
+elseif(FDB_USE_PYTHON_CODEGEN)
+  # illumos: no C# build; the Python actor compiler is invoked directly in
+  # FlowCommands.cmake (python3 -m flow.actorcompiler_py). Provide the target
+  # for ordering and an empty actor_exe.
+  add_custom_target(actorcompiler DEPENDS
+    ${CMAKE_CURRENT_SOURCE_DIR}/flow/actorcompiler_py/__main__.py
+    ${CMAKE_CURRENT_SOURCE_DIR}/flow/actorcompiler_py/actor_compiler.py
+    ${CMAKE_CURRENT_SOURCE_DIR}/flow/actorcompiler_py/actor_parser.py
+    ${CMAKE_CURRENT_SOURCE_DIR}/flow/actorcompiler_py/parse_tree.py
+    ${CMAKE_CURRENT_SOURCE_DIR}/flow/actorcompiler_py/errors.py)
+  set(actor_exe "")
 else()
   set(ACTOR_COMPILER_REFERENCES
     "-r:System,System.Core,System.Xml.Linq,System.Data.DataSetExtensions,Microsoft.CSharp,System.Data,System.Xml")

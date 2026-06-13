@@ -12,6 +12,10 @@ if(WIN32)
     "Microsoft.CSharp"
     "System.Data"
     "System.Xml")
+elseif(FDB_USE_PYTHON_CODEGEN)
+  # illumos: coverage XML is skipped (see FlowCommands.cmake). Empty target so
+  # the per-target coverage_* dependents still resolve.
+  add_custom_target(coveragetool)
 else()
   set(COVERAGETOOL_COMPILER_REFERENCES
     "-r:System,System.Core,System.Xml.Linq,System.Data.DataSetExtensions,Microsoft.CSharp,System.Data,System.Xml")

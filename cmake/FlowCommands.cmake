@@ -64,7 +64,7 @@ function(generate_coverage_xml)
       DEPENDS ${in_files}
       WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
       COMMENT "Generate coverage xml")
-  else()
+  elseif(NOT FDB_USE_PYTHON_CODEGEN)
     add_custom_command(
       OUTPUT ${target_file}
       COMMAND ${MONO_EXECUTABLE} ${coveragetool_exe} ${target_file} ${in_files}
@@ -72,8 +72,13 @@ function(generate_coverage_xml)
       WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
       COMMENT "Generate coverage xml")
   endif()
-  add_custom_target(coverage_${target_name} ALL DEPENDS ${target_file})
-  add_dependencies(coverage_${target_name} coveragetool)
+  if(FDB_USE_PYTHON_CODEGEN)
+    # illumos: no C# coveragetool; coverage XML is skipped (non-essential).
+    add_custom_target(coverage_${target_name})
+  else()
+    add_custom_target(coverage_${target_name} ALL DEPENDS ${target_file})
+    add_dependencies(coverage_${target_name} coveragetool)
+  endif()
 endfunction()
 
 add_custom_target(strip_targets)
@@ -232,6 +237,12 @@ function(add_flow_target)
             COMMAND $<TARGET_FILE:actorcompiler> "${in_file}" "${out_file}" ${actor_compiler_flags}
             DEPENDS "${in_file}" ${actor_exe}
             COMMENT "Compile actor: ${src}")
+        elseif(FDB_USE_PYTHON_CODEGEN)
+          add_custom_command(OUTPUT "${out_file}"
+            COMMAND ${Python3_EXECUTABLE} -m flow.actorcompiler_py "${in_file}" "${out_file}" ${actor_compiler_flags} > /dev/null
+            DEPENDS "${in_file}" actorcompiler
+            WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+            COMMENT "Compile actor (python): ${src}")
         else()
           add_custom_command(OUTPUT "${out_file}"
             COMMAND ${MONO_EXECUTABLE} ${actor_exe} "${in_file}" "${out_file}" ${actor_compiler_flags} > /dev/null
