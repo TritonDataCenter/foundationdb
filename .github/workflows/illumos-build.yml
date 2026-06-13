@@ -1,0 +1,77 @@
+name: illumos-build
+
+on:
+  push:
+    branches: [ 'smartos/**' ]
+    # our release tags are prefixed to stay clear of upstream FDB version tags.
+    tags: [ 'illumos-v*' ]
+  workflow_dispatch:
+
+# One physical builder; queue rather than overlap.
+concurrency:
+  group: fdb-illumos-builder
+
+permissions:
+  contents: write
+
+jobs:
+  build-illumos:
+    runs-on: self-hosted
+    env:
+      # SmartOS zone with pkgsrc gcc13, cmake>=3.24, ninja, python312,
+      # libexecinfo. Quarterly pkgsrc is fine -- no trunk needed (unlike the
+      # ClickHouse builder). Set the repo variable FDB_BUILDER to root@<zone>.
+      BUILDER: ${{ vars.FDB_BUILDER }}
+      SRC: /var/tmp/fdb-port/foundationdb
+      BUILD_DIR: /var/tmp/fdb-port/build
+      OUT_DIR: /var/tmp/fdb-port/out
+    steps:
+      - name: Checkout
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # 5.0.1
+
+      - name: Sync source to illumos builder
+        run: |
+          test -n "$BUILDER" || { echo "set the FDB_BUILDER repo variable (root@<zone>)"; exit 1; }
+          ssh "$BUILDER" "mkdir -p '$SRC'"
+          rsync -a --delete \
+            --exclude '.git/' --exclude 'build/' \
+            "$GITHUB_WORKSPACE/" "$BUILDER:$SRC/"
+
+      - name: Build FoundationDB on illumos
+        shell: bash
+        run: |
+          # illumos-build.sh runs the BUILDING-illumos.md steps: cmake -G Ninja
+          # Release, ninja fdbserver fdbcli fdbbackup fdb_c, strip + package.
+          # Warm builds reuse the kept $BUILD_DIR; cold is long (heavy TUs).
+          ssh "$BUILDER" \
+            "export GIT_SHA='$GITHUB_SHA' SRC='$SRC' BUILD_DIR='$BUILD_DIR' OUT_DIR='$OUT_DIR'; cd '$SRC' && bash illumos-build.sh" \
+            | tee build.log
+          echo "TARBALL=$(tail -1 build.log)" >> "$GITHUB_ENV"
+
+      - name: Fetch artifact from builder
+        shell: bash
+        run: |
+          mkdir -p out
+          scp "$BUILDER:$TARBALL" out/
+          cd out
+          for f in foundationdb-*-illumos-amd64.tar.gz; do
+            sha256sum "$f" > "$f.sha256"
+          done
+          ls -lh
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1 # 4.6.1
+        with:
+          name: foundationdb-illumos
+          path: out/*
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: Attach to release (tags)
+        if: startsWith(github.ref, 'refs/tags/illumos-v')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" out/* \
+            --title "$GITHUB_REF_NAME" --generate-notes || \
+          gh release upload "$GITHUB_REF_NAME" out/* --clobber

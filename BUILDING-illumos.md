@@ -288,3 +288,46 @@ Everything illumos-specific is contained in two commits on the
 
 `git log --stat 978706fa7^..4e75fab16` is the complete diff against
 upstream `main`.
+
+## Continuous integration
+
+`.github/workflows/illumos-build.yml` runs `illumos-build.sh` on a
+self-hosted illumos builder: a Linux self-hosted runner checks out this
+branch, rsyncs it to the builder, runs the cmake/ninja/strip/package steps
+above, and scp's `foundationdb-<ver>-<sha>-illumos-amd64.tar.gz` (bin/ +
+lib/ + SHA256SUMS) back as an Actions artifact. On `illumos-v*` tags it also
+cuts a GitHub release with a `.sha256` sidecar.
+
+Triggers: push to `smartos/**`, `illumos-v*` tags, manual `workflow_dispatch`.
+Serialized by a `concurrency` group (one physical builder).
+
+One-time setup (operator):
+
+1. **Builder zone** — a SmartOS zone with pkgsrc `gcc13`, `cmake` (>=3.24),
+   `ninja-build`, `python312`, `patch`, `git`, `libexecinfo` (the
+   "Install build dependencies" set above). Quarterly pkgsrc is fine; no
+   trunk needed, so this can share the mariana-trench gcc13 builder or run
+   on its own zone. Size for the build: 16 GB RAM recommended.
+2. **SSH** — authorize the Linux runner's key for `root@<zone>`.
+3. **Runner** — register the self-hosted Linux runner so this repo can use
+   it (an org-level runner shared across the TritonDataCenter illumos
+   builds, or a repo-scoped runner).
+4. **Repo variable** — set `FDB_BUILDER` to `root@<zone-ip>`. The workflow
+   fails fast if it is unset.
+
+## Tracking upstream
+
+The illumos changes live on the dedicated `smartos/<line>` branch so they
+can be rebased cleanly onto a new upstream FoundationDB release:
+
+```sh
+# `upstream` = apple/foundationdb, `origin` = TritonDataCenter/foundationdb
+git fetch upstream
+git checkout -b smartos/<new> <new-upstream-ref>
+git rebase --onto <new-upstream-ref> <old-base> smartos/<old>
+# resolve conflicts, rebuild + smoke test, then:
+git push -u origin smartos/<new>
+```
+
+The CI workflow + this guide ride the branch, so the new line is buildable
+the moment it is pushed.
