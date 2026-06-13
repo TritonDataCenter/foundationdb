@@ -47,6 +47,9 @@ env_set(USE_JEMALLOC ${jemalloc_default} BOOL "Link with jemalloc")
 # globals (yield, etc.) are renamed out of the way before any system
 # header declares them.
 if(CMAKE_SYSTEM_NAME STREQUAL "SunOS")
+  # 8.0 defines is_cxx_compile globally; 7.3 does not, so define it here for the
+  # prelude force-include (true for C and C++ TUs, not ASM).
+  set(is_cxx_compile "$<OR:$<COMPILE_LANGUAGE:CXX>,$<COMPILE_LANGUAGE:C>>")
   add_compile_options(
     "$<${is_cxx_compile}:-include${CMAKE_SOURCE_DIR}/flow/include/flow/IllumosPrelude.h>")
   # illumos hides large parts of POSIX/XOPEN/threads behind feature-test
