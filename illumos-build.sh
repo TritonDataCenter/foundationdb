@@ -56,9 +56,13 @@ echo "build jobs: $njobs (cpus=$ncpu mem=${mem_mb}MB)"
 
 mkdir -p "$BUILD_DIR"
 cd "$BUILD_DIR"
-# No extra toggles: CMake on SunOS auto-selects the Python actor compiler,
-# disables jemalloc, and skips the USDT/GNU-ld-specific bits.
-cmake -G Ninja -DCMAKE_BUILD_TYPE=Release "$SRC"
+# CMake on SunOS auto-selects the Python actor compiler, disables jemalloc, and
+# skips the USDT/GNU-ld-specific bits. WITH_ROCKSDB=OFF matches the proven port
+# config: the experimental RocksDB engine isn't needed by fdbserver and its
+# bundled source doesn't compile cleanly here (thread_local-on-function).
+cmake -G Ninja -DCMAKE_BUILD_TYPE=Release \
+    -DWITH_ROCKSDB=OFF -DBUILD_TESTING=OFF \
+    "$SRC"
 ninja -j "$njobs" fdbserver fdbcli fdbbackup fdb_c
 
 # Stage bin + lib. Strip copies directly: upstream's strip_targets target
