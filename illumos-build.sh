@@ -23,13 +23,17 @@ SRC="${SRC:-$PWD}"
 BUILD_DIR="${BUILD_DIR:-/var/tmp/fdb-port/build}"
 OUT_DIR="${OUT_DIR:-/var/tmp/fdb-port/out}"
 
-# pkgsrc toolchain (gcc13, cmake, ninja, python3.12) + illumos system bins.
-export PATH=/opt/local/bin:/opt/local/sbin:/usr/bin:/usr/sbin:/sbin:${PATH:-}
+# pkgsrc gcc13 toolchain + cmake/ninja/python + illumos system bins. Pin CC/CXX
+# to gcc13 explicitly: the shared builder also carries clang (for ClickHouse),
+# and FDB must compile with gcc.
+export PATH=/opt/local/gcc13/bin:/opt/local/bin:/opt/local/sbin:/usr/bin:/usr/sbin:/sbin:${PATH:-}
+export CC="${CC:-/opt/local/gcc13/bin/gcc}"
+export CXX="${CXX:-/opt/local/gcc13/bin/g++}"
 
-for c in cc cmake ninja python3 strip gtar digest; do
+for c in "$CC" "$CXX" cmake ninja python3 strip gtar digest; do
     command -v "$c" >/dev/null 2>&1 || { echo "missing required command: $c" >&2; exit 1; }
 done
-echo "cc: $(cc --version | head -1)"
+echo "cc: $($CC --version | head -1)"
 echo "cmake: $(cmake --version | head -1)"
 
 FDB_VER="${FDB_VER:-$(awk '/project\(foundationdb/{f=1} f&&/VERSION/{print $2; exit}' "$SRC/CMakeLists.txt")}"
