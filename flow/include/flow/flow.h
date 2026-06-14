@@ -1394,6 +1394,34 @@ static inline void destruct(T& t) {
 	t.~T();
 }
 
+// illumos codegen shim: the Python actor compiler (ported from 8.0) emits the
+// 8.0 named wait-state constants, actorWaitStateIsWaiting(), ActorIdentifier,
+// and a per-actor ActiveActorHelper member. 7.3's runtime uses the raw int8_t
+// conventions directly (>0 waiting in group, 0 not waiting, -1 cancelled) and
+// has no actor-context tracking. These definitions reproduce 7.3's exact
+// integer semantics and make the helper a no-op, so generated code compiles
+// and runs unchanged; only the (already-dormant) actor-context tracking stays
+// dark.
+constexpr int8_t ACTOR_WAIT_STATE_CANCELLED = -1;
+constexpr int8_t ACTOR_WAIT_STATE_NOT_WAITING = 0;
+constexpr bool actorWaitStateIsWaiting(int8_t waitState) {
+	return waitState > ACTOR_WAIT_STATE_NOT_WAITING;
+}
+constexpr bool actorWaitStateIsCancelled(int8_t waitState) {
+	return waitState < ACTOR_WAIT_STATE_NOT_WAITING;
+}
+using ActorIdentifier = UID;
+struct ActiveActorHelper {
+	ActiveActorHelper() {}
+	explicit ActiveActorHelper(const ActorIdentifier&) {}
+};
+// The Python compiler guards waitNext operands with a static_assert accepting
+// FutureStream<T> or ThreadFutureStream<T>. 7.3 has no ThreadFutureStream and
+// never uses one, so a forward declaration is enough for std::is_same (which
+// does not require a complete type); that branch is always false here.
+template <class T>
+class ThreadFutureStream;
+
 template <class ReturnValue>
 struct Actor : SAV<ReturnValue> {
 #ifdef ENABLE_SAMPLING

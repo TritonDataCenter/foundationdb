@@ -327,6 +327,14 @@ Future<Void> holdWhileVoid(X object, Future<T> what) {
 	return Void();
 }
 
+// illumos: <net/if.h> (under __EXTENSIONS__) forward-declares a global
+// `struct map`, which otherwise hides flow's map() actor in unqualified lookup
+// and suppresses ADL for callers defined before map() (store/storeOrThrow).
+// Declaring map() first makes the function name hide the system struct, so the
+// calls below resolve to the actor. Matches the generated trampoline signature.
+template <class T, class F>
+[[nodiscard]] Future<std::invoke_result_t<F, T>> map(Future<T> const& what, F const& func);
+
 // Assign the future value of what to out
 template <class T, class X>
 Future<Void> store(X& out, Future<T> what) {
