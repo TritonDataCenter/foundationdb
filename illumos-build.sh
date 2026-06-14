@@ -84,6 +84,10 @@ for b in fdbserver fdbcli fdbbackup; do strip --strip-debug --strip-unneeded "$S
 # pkgsrc/gcc13) so the tarball is self-contained; the consumer sets
 # LD_LIBRARY_PATH=<prefix>/lib, matching the deployed /opt/fdb layout.
 cp "$BUILD_DIR/lib/libfdb_c.so" "$STAGE/lib/"
+# Strip debug info from libfdb_c too; with -ggdb1 it is ~200 MB unstripped.
+# --strip-unneeded keeps the exported fdb_c API (dynamic symbols), dropping
+# only debug + local symbols.
+strip --strip-debug --strip-unneeded "$STAGE/lib/libfdb_c.so"
 for so in $(ldd "$STAGE/bin/fdbserver" "$STAGE/lib/libfdb_c.so" 2>/dev/null | awk '/=>/ {print $3}' | sort -u); do
     case "$so" in
         /opt/local/*|*/gcc13/*) cp -p "$so" "$STAGE/lib/" ;;
