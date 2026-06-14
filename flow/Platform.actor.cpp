@@ -1239,8 +1239,24 @@ void getMachineLoad(uint64_t& idleTime, uint64_t& totalTime, bool logDetails) {
 	}
 }
 
-DiskStatistics getDiskStatistics(std::string const& directory) {
+void getDiskStatistics(std::string const& directory,
+                       uint64_t& currentIOs,
+                       uint64_t& readMilliSecs,
+                       uint64_t& writeMilliSecs,
+                       uint64_t& IOMilliSecs,
+                       uint64_t& reads,
+                       uint64_t& writes,
+                       uint64_t& writeSectors,
+                       uint64_t& readSectors) {
 	INJECT_FAULT(platform_error, "getDiskStatistics");
+	currentIOs = 0;
+	readMilliSecs = 0;
+	writeMilliSecs = 0;
+	IOMilliSecs = 0;
+	reads = 0;
+	writes = 0;
+	writeSectors = 0;
+	readSectors = 0;
 	// We do not yet resolve `directory` -> kstat instance (that requires
 	// statvfs -> minor device -> kstat instance walks not implemented here).
 	// The system-wide aggregate across every sd:N:* and nvme:N:* device
@@ -1250,24 +1266,20 @@ DiskStatistics getDiskStatistics(std::string const& directory) {
 	(void)directory;
 	illumos::DiskIo io;
 	if (!illumos::readDiskIo(io)) {
-		return DiskStatistics{};
+		return;
 	}
-	DiskStatistics out;
-	out.reads = io.reads;
-	out.writes = io.writes;
-	out.readBytes = io.bytesRead;
-	out.writeBytes = io.bytesWritten;
+	reads = io.reads;
+	writes = io.writes;
 	// kstat_io_t reports bytes; FDB's other platforms report 512-byte
 	// "sectors" alongside bytes for compatibility with /proc/diskstats.
 	// Mirror that synthesis here.
-	out.readSectors = io.bytesRead / 512;
-	out.writeSectors = io.bytesWritten / 512;
-	out.currentIOs = io.inFlight;
+	readSectors = io.bytesRead / 512;
+	writeSectors = io.bytesWritten / 512;
+	currentIOs = io.inFlight;
 	// kstat_io_t exposes total service time (rtime) but does not split by
 	// direction.  Report it on IOMilliSecs and leave the per-direction
 	// fields at 0; consumers either use the totals or tolerate the gap.
-	out.IOMilliSecs = io.serviceTimeNs / 1000000ull;
-	return out;
+	IOMilliSecs = io.serviceTimeNs / 1000000ull;
 }
 
 dev_t getDeviceId(std::string path) {

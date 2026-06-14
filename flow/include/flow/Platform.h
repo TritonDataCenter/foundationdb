@@ -281,7 +281,8 @@ void getDiskStatistics(std::string const& directory,
                        uint64_t& IOMilliSecs,
                        uint64_t& reads,
                        uint64_t& writes,
-                       uint64_t& writeSectors);
+                       uint64_t& writeSectors,
+                       uint64_t& readSectors);
 
 void getMachineLoad(uint64_t& idleTime, uint64_t& totalTime, bool logDetails);
 
