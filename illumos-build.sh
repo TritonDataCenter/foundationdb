@@ -57,13 +57,14 @@ echo "build jobs: $njobs (cpus=$ncpu mem=${mem_mb}MB)"
 mkdir -p "$BUILD_DIR"
 cd "$BUILD_DIR"
 # CMake on SunOS auto-selects the Python actor compiler, disables jemalloc, and
-# skips the USDT/GNU-ld-specific bits. WITH_ROCKSDB=OFF matches the proven port
-# config: the experimental RocksDB engine isn't needed by fdbserver and its
-# bundled source doesn't compile cleanly here (thread_local-on-function).
-# USE_AVX=OFF builds the portable variant: a binary built with AVX SIGILLs on a
-# CPU without it, and triton-fdb ships to a heterogeneous CN fleet.
+# skips the USDT/GNU-ld-specific bits. SSD_ROCKSDB_EXPERIMENTAL=OFF disables the
+# experimental RocksDB engine (the 7.3 knob; it derives WITH_ROCKSDB_EXPERIMENTAL
+# which gates fdbserver). It isn't needed by fdbserver and its bundled source
+# doesn't compile cleanly here (thread_local-on-function). memory/ssd/redwood
+# engines remain. USE_AVX=OFF builds the portable variant: a binary built with
+# AVX SIGILLs on a CPU without it, and triton-fdb ships to a heterogeneous fleet.
 cmake -G Ninja -DCMAKE_BUILD_TYPE=Release \
-    -DWITH_ROCKSDB=OFF -DBUILD_TESTING=OFF -DUSE_AVX=OFF \
+    -DSSD_ROCKSDB_EXPERIMENTAL=OFF -DBUILD_TESTING=OFF -DUSE_AVX=OFF \
     "$SRC"
 ninja -j "$njobs" fdbserver fdbcli fdbbackup fdb_c
 
