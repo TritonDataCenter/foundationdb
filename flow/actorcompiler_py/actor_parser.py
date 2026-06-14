@@ -392,6 +392,18 @@ class ActorParser:
                         f'#line {self.tokens[i].source_line} "{self.source_file}"\n'
                     )
                     outLine += 1
+            elif tok.value == "DESCR":
+                # 7.3 uses the DESCR metric-descriptor language; 8.0 dropped it,
+                # so the ported compiler reimplements it here (mirrors the C#
+                # DescrCompiler) instead of passing it through verbatim.
+                descr, end = self.parse_descr(i)
+                outLine += self.write_descr(writer, descr, tok.brace_depth)
+                i = end
+                if i < len(self.tokens) and self.line_numbers_enabled:
+                    writer.write(
+                        f'#line {self.tokens[i].source_line} "{self.source_file}"\n'
+                    )
+                    outLine += 1
             elif tok.value in ("class", "struct", "union"):
                 writer.write(tok.value)
                 success, name = self.parse_class_context(
@@ -1037,3 +1049,122 @@ class ActorParser:
 
     def str(self, tokens: Iterable[Token]) -> str:
         return "".join(tok.value for tok in tokens)
+
+    # DESCR (event-metric descriptor) support, ported from the C# compiler.
+
+    def parse_descr(self, pos: int):
+        toks = self.range(pos + 1, len(self.tokens))
+        heading = toks.take_while(lambda t: t.value != "{")
+        base_depth = toks.first().brace_depth
+        body = self.range(heading.end_pos + 1, len(self.tokens)).take_while(
+            lambda t: t.brace_depth > base_depth or t.value == ";"
+        )
+        descr = {"name": "", "super": None, "body": []}
+        self.parse_descr_heading(descr, heading)
+        descr["body"] = self.parse_descr_code_block(body)
+        end = body.end_pos + 1
+        return descr, end
+
+    def parse_descr_heading(self, descr, toks: TokenRange) -> None:
+        nonWhitespace = lambda t: not t.is_whitespace
+        toks.first(nonWhitespace).ensure(
+            "non-struct DESCR!", lambda t: t.value == "struct"
+        )
+        toks = toks.skipWhile(lambda t: t.is_whitespace).skip(1).skipWhile(
+            lambda t: t.is_whitespace
+        )
+        colon = next((t for t in toks if t.value == ":"), None)
+        if colon is not None:
+            descr["super"] = self.str(
+                self.range(colon.position + 1, toks.end_pos)
+            ).strip()
+            toks = self.range(toks.begin_pos, colon.position)
+        descr["name"] = self.str(toks).strip()
+
+    def parse_descr_code_block(self, toks: TokenRange):
+        declarations = []
+        while True:
+            delim = next((t for t in toks if t.value == ";"), None)
+            if delim is None:
+                break
+            pos = delim.position + 1
+            potential = self.range(pos, toks.end_pos).skipWhile(
+                lambda t: t.value in ("\t", " ")
+            )
+            if not potential.is_empty() and potential.first().value.startswith("//"):
+                pos = potential.first().position + 1
+            self.parse_descr_declaration(self.range(toks.begin_pos, pos), declarations)
+            toks = self.range(pos, toks.end_pos)
+        if not toks.all_match(lambda t: t.is_whitespace):
+            raise ActorCompilerError(
+                toks.first(lambda t: not t.is_whitespace).source_line,
+                "Trailing unterminated statement in code block",
+            )
+        return declarations
+
+    def parse_descr_declaration(self, toks: TokenRange, declarations) -> None:
+        delim = toks.first(lambda t: t.value == ";")
+        name_range = (
+            self.range(toks.begin_pos, delim.position)
+            .Revskip_while(lambda t: t.is_whitespace)
+            .Revtake_while(lambda t: not t.is_whitespace)
+        )
+        type_range = self.range(toks.begin_pos, name_range.begin_pos)
+        comment_range = self.range(delim.position + 1, toks.end_pos)
+        declarations.append(
+            {
+                "name": self.str(name_range).strip(),
+                "type": self.str(type_range).strip(),
+                "comment": self.str(comment_range).strip().lstrip("/"),
+            }
+        )
+
+    def write_descr(self, writer: io.TextIOBase, descr, brace_depth: int) -> int:
+        indent = "\t" * brace_depth
+        name = descr["name"]
+        body = descr["body"]
+        lines = 0
+        writer.write(f"{indent}template<> struct Descriptor<struct {name}> {{\n")
+        writer.write(f'{indent}\tstatic StringRef typeName() {{ return "{name}"_sr; }}\n')
+        writer.write(f"{indent}\ttypedef {name} type;\n")
+        lines += 3
+        for dec in body:
+            writer.write(f'{indent}\tstruct {dec["name"]}Descriptor {{\n')
+            writer.write(
+                f'{indent}\t\tstatic StringRef name() {{ return "{dec["name"]}"_sr; }}\n'
+            )
+            writer.write(
+                f'{indent}\t\tstatic StringRef typeName() {{ return "{dec["type"]}"_sr; }}\n'
+            )
+            writer.write(
+                f'{indent}\t\tstatic StringRef comment() {{ return "{dec["comment"]}"_sr; }}\n'
+            )
+            writer.write(f'{indent}\t\ttypedef {dec["type"]} type;\n')
+            writer.write(f'{indent}\t\tstatic inline type get({name}& from);\n')
+            writer.write(f"{indent}\t}};\n")
+            lines += 7
+        writer.write(f"{indent}\ttypedef std::tuple<")
+        writer.write(",".join(f'{dec["name"]}Descriptor' for dec in body))
+        writer.write("> fields;\n")
+        writer.write(
+            f"{indent}\ttypedef make_index_sequence_impl<0, index_sequence<>, "
+            "std::tuple_size<fields>::value>::type field_indexes;\n"
+        )
+        writer.write(f"{indent}}};\n")
+        if descr["super"]:
+            writer.write(f'{indent}struct {name} : {descr["super"]} {{\n')
+        else:
+            writer.write(f"{indent}struct {name} {{\n")
+        lines += 4
+        for dec in body:
+            writer.write(f'{indent}\t{dec["type"]} {dec["name"]}; //{dec["comment"]}\n')
+            lines += 1
+        writer.write(f"{indent}}};\n")
+        lines += 1
+        for dec in body:
+            writer.write(
+                f'{indent}{dec["type"]} Descriptor<{name}>::{dec["name"]}Descriptor::'
+                f'get({name}& from) {{ return from.{dec["name"]}; }}\n'
+            )
+            lines += 1
+        return lines
